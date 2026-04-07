@@ -56,6 +56,7 @@ async function register(req, res) {
     const username = String(req.body.username || '').trim();
     const email = String(req.body.email || '').trim().toLowerCase();
     const password = String(req.body.password || '');
+    const age = Number(req.body.age);
 
     if (!username || !email || !password) {
       res.status(400).json({
@@ -92,10 +93,10 @@ async function register(req, res) {
     const avatarSeed = `${username}-${Date.now()}`;
     const result = await run(
       `
-        INSERT INTO users (username, email, password_hash, role, rank, is_guest, avatar_seed, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO users (username, email, password_hash, role, rank, is_guest, avatar_seed, age, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `,
-      [username, email, passwordHash, assignedRole, assignedRank, 0, avatarSeed]
+      [username, email, passwordHash, assignedRole, assignedRank, 0, avatarSeed, age]
     );
 
     const createdUser = await get(

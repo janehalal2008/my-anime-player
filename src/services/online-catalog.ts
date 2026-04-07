@@ -6,7 +6,7 @@ const MEDIA_BACKEND_BASE_URL =
   process.env.EXPO_PUBLIC_MEDIA_BACKEND_URL ||
   (Platform.OS === 'web'
     ? 'https://217-60-245-84.sslip.io/api/media'
-    : 'http://217.60.245.84:3000/api');
+    : 'https://217-60-245-84.sslip.io/api/media');
 const KODIK_REQUEST_TIMEOUT_MS = 35000;
 
 type ShikimoriCatalogResponseItem = {
@@ -426,104 +426,134 @@ function parseSeasons(result: KodikSearchResult): KodikSeason[] {
       ];
 }
 
-function mergeTranslations(results: KodikSearchResult[]) {
+function mergeTranslations(results: KodikSearchResult[], requestedShikimoriId?: string) {
   const translations = new Map<string, KodikTranslation>();
 
-  for (const result of results) {
-    if (result.translation?.id == null) {
-      continue;
-    }
+  // CRITICAL FIX: Strictly filter by shikimori_id if provided to avoid franchise bug
+  const filteredResults = requestedShikimoriId
+    ? results.filter(r => {
+        const rid = String((r as any).shikimori_id || '');
+        // We strictly enforce requestedShikimoriId if rid exists on the result
+        return !rid || rid === requestedShikimoriId;
+      })
+    : results;
 
+  for (const result of filteredResults) {
     const translationTitle = normalizeText(result.translation?.title) || i18n.t('online.dubs.original');
     const translationType = normalizeText(result.translation?.type) || 'voice';
+
+    // CRITICAL: USE RESULT ID TO PREVENT OVERWRITING DUBS!
+    // Often AniDub and others might share same translation ID across different result entries
+    const key = String(result.id || result.translation?.id || `${translationTitle}-${Math.random()}`);
+
     const playerLink = normalizeKodikLink(result.link);
-    const seasons = parseSeasons(result);
-    const posterUrl =
-      normalizeKodikLink(result.material_data?.anime_poster_url) ??
-      normalizeKodikLink(result.material_data?.poster_url);
-    const key = String(result.translation.id);
+    const posterUrl = normalizeKodikLink(result.material_data?.anime_poster_url) ?? normalizeKodikLink(result.material_data?.poster_url);
 
-    const existing = translations.get(key);
+    // FLATTEN ALL EPISODES FROM ALL SEASONS as requested in the override
+    const flatEpisodes: KodikEpisode[] = [];
 
-    if (!existing) {
+    // Check if result has seasons
+    if (result.seasons && typeof result.seasons === 'object') {
+      Object.entries(result.seasons).forEach(([seasonNum, seasonPayload]: [string, any]) => {
+        if (seasonPayload?.episodes && typeof seasonPayload.episodes === 'object') {
+          Object.entries(seasonPayload.episodes).forEach(([epNum, epData]: [string, any]) => {
+            const numericNum = toPositiveNumber(epNum.replace(/\D+/g, ''), 0) || 1;
+
+            let epLink = null;
+            let epTitle = null;
+            let epScreenshot = null;
+
+            if (typeof epData === 'string') {
+              epLink = normalizeKodikLink(epData);
+            } else if (epData && typeof epData === 'object') {
+              epLink = normalizeKodikLink(epData.link);
+              epTitle = normalizeText(epData.title);
+              epScreenshot = epData.screenshots?.[0] ?? null;
+            }
+
+            flatEpisodes.push({
+              id: `${key}-s${seasonNum}-e${numericNum}`,
+              number: numericNum,
+              title: epTitle || i18n.t('online.episodeLabel', { value: numericNum }),
+              link: epLink ?? playerLink,
+              screenshot: epScreenshot,
+            });
+          });
+        }
+      });
+    }
+
+    // If no seasons found, try to grab root episodes
+    if (flatEpisodes.length === 0) {
+      const rootEpisodes = getRootEpisodesPayload(result);
+      if (rootEpisodes && typeof rootEpisodes === 'object') {
+        Object.entries(rootEpisodes).forEach(([epNum, epData]: [string, any]) => {
+           const numericNum = toPositiveNumber(epNum.replace(/\D+/g, ''), 0) || 1;
+           let epLink = null;
+           if (typeof epData === 'string') epLink = normalizeKodikLink(epData);
+           else if (epData) epLink = normalizeKodikLink(epData.link);
+
+           flatEpisodes.push({
+             id: `${key}-e${numericNum}`,
+             number: numericNum,
+             title: (epData && typeof epData === 'object' && normalizeText(epData.title)) || i18n.t('online.episodeLabel', { value: numericNum }),
+             link: epLink ?? playerLink,
+             screenshot: (epData && typeof epData === 'object' && epData.screenshots?.[0]) || null,
+           });
+        });
+      }
+    }
+
+    // If still no episodes, create at least one if it's not a serial or we have a link
+    if (flatEpisodes.length === 0 && playerLink) {
+       const count = toPositiveNumber(result.episodes_count, 1);
+       for (let i = 1; i <= count; i++) {
+         flatEpisodes.push({
+           id: `${key}-fallback-e${i}`,
+           number: i,
+           title: i18n.t('online.episodeLabel', { value: i }),
+           link: playerLink,
+           screenshot: null,
+         });
+       }
+    }
+
+    // Remove duplicates and sort episodes
+    const uniqueEpisodes = Array.from(new Map(flatEpisodes.map(item => [item.number, item])).values())
+      .sort((a, b) => a.number - b.number);
+
+    if (uniqueEpisodes.length > 0) {
       translations.set(key, {
         id: key,
         title: translationTitle,
         type: translationType,
         posterUrl,
-        playerLink: playerLink ?? seasons[0]?.link ?? null,
-        seasons,
-      });
-      continue;
-    }
-
-    const mergedSeasons = new Map(existing.seasons.map((season) => [season.id, season]));
-
-    for (const season of seasons) {
-      const current = mergedSeasons.get(season.id);
-      if (!current) {
-        mergedSeasons.set(season.id, season);
-        continue;
-      }
-
-      const mergedEpisodes = new Map(current.episodes.map((episode) => [episode.number, episode]));
-      for (const episode of season.episodes) {
-        const currentEpisode = mergedEpisodes.get(episode.number);
-        if (!currentEpisode) {
-          mergedEpisodes.set(episode.number, episode);
-          continue;
-        }
-
-        mergedEpisodes.set(episode.number, {
-          ...currentEpisode,
-          title: currentEpisode.title || episode.title,
-          link: currentEpisode.link ?? episode.link,
-          screenshot: currentEpisode.screenshot ?? episode.screenshot,
-        });
-      }
-
-      mergedSeasons.set(season.id, {
-        ...current,
-        link: current.link ?? season.link,
-        episodes: [...mergedEpisodes.values()].sort((left, right) => left.number - right.number),
+        playerLink,
+        seasons: [{ id: 'all-episodes', label: i18n.t('online.allEpisodes', { defaultValue: 'All Episodes' }), link: playerLink, episodes: uniqueEpisodes }]
       });
     }
-
-    translations.set(key, {
-      ...existing,
-      posterUrl: existing.posterUrl ?? posterUrl,
-      playerLink: existing.playerLink ?? playerLink ?? seasons[0]?.link ?? null,
-      seasons: [...mergedSeasons.values()].sort((left, right) => {
-        const leftValue = toPositiveNumber(left.id.replace(/\D+/g, ''), 0);
-        const rightValue = toPositiveNumber(right.id.replace(/\D+/g, ''), 0);
-        return leftValue - rightValue;
-      }),
-    });
   }
 
-  return [...translations.values()].sort((left, right) => {
-    return left.title.localeCompare(right.title, undefined, { sensitivity: 'base' });
-  });
+  // Return sorted translations (AniDub, StudioBand, etc. will all be here)
+  return Array.from(translations.values()).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-export async function fetchTrendingCatalog() {
-  const payload = await requestJson<ShikimoriCatalogResponseItem[]>(
-    `${SHIKIMORI_BASE_URL}/api/animes?limit=30&order=ranked`
-  );
+export async function fetchTrendingCatalog(includeHentai = false) {
+  const url = `${SHIKIMORI_BASE_URL}/api/animes?limit=30&order=ranked${includeHentai ? '' : '&genre_exclude=12'}`;
+  const payload = await requestJson<ShikimoriCatalogResponseItem[]>(url);
 
   return Array.isArray(payload) ? payload.map(mapCatalogAnime) : [];
 }
 
-export async function searchCatalog(query: string) {
+export async function searchCatalog(query: string, includeHentai = false) {
   const trimmed = query.trim();
 
   if (!trimmed) {
-    return fetchTrendingCatalog();
+    return fetchTrendingCatalog(includeHentai);
   }
 
-  const payload = await requestJson<ShikimoriCatalogResponseItem[]>(
-    `${SHIKIMORI_BASE_URL}/api/animes?search=${encodeURIComponent(trimmed)}&limit=20`
-  );
+  const url = `${SHIKIMORI_BASE_URL}/api/animes?search=${encodeURIComponent(trimmed)}&limit=20${includeHentai ? '' : '&genre_exclude=12'}`;
+  const payload = await requestJson<ShikimoriCatalogResponseItem[]>(url);
 
   return Array.isArray(payload) ? payload.map(mapCatalogAnime) : [];
 }
@@ -586,7 +616,7 @@ export async function fetchKodikTranslations(shikimoriId: number, fallbackTitle?
       throw lastError instanceof Error ? lastError : new Error(i18n.t('online.providerError'));
     }
 
-    return mergeTranslations(results);
+    return mergeTranslations(results, String(shikimoriId));
   } catch (error) {
     console.error('Kodik Fetch Failed:', error);
     throw error;

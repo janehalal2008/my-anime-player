@@ -16,7 +16,6 @@ import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated'
 import { useTranslation } from 'react-i18next';
 
 import { GlassCard } from '@/src/components/ui/glass-card';
-import { GlassPressable } from '@/src/components/ui/glass-pressable';
 import { LiquidBackground } from '@/src/components/ui/liquid-background';
 import { clearBrokenVideoEntries, initializeDatabase } from '@/src/db/database';
 import { useDatabaseContext } from '@/src/db/db-context';
@@ -24,26 +23,16 @@ import { SUPPORTED_LANGUAGES } from '@/src/i18n';
 import { useApp } from '@/src/providers/app-provider';
 import { THEME_PRESET_OPTIONS } from '@/src/theme/liquid';
 
-type SheetMode = 'language' | 'theme' | null;
-
-function SettingRow({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+function SettingToggle({ title, value, onValueChange }: { title: string, value: boolean, onValueChange: (v: boolean) => void }) {
   const { theme } = useApp();
-
   return (
-    <GlassCard style={styles.rowCard}>
-      <View style={styles.rowCopy}>
-        <Text style={[styles.rowTitle, { color: theme.textPrimary }]}>{title}</Text>
-        <Text style={[styles.rowDescription, { color: theme.textSecondary }]}>{description}</Text>
-      </View>
-      {children}
+    <GlassCard style={styles.settingCard}>
+       <Text style={[styles.settingText, { color: theme.textPrimary }]}>{title}</Text>
+       <Switch
+         value={value}
+         onValueChange={onValueChange}
+         trackColor={{ false: 'rgba(255,255,255,0.1)', true: theme.accentPrimary }}
+       />
     </GlassCard>
   );
 }
@@ -53,472 +42,117 @@ export default function SettingsTabScreen() {
   const { t } = useTranslation();
   const {
     theme,
-    ready,
     language,
-    darkModeEnabled,
     autoDeleteWatchedEpisodes,
     themePreset,
     setLanguage,
-    setDarkModeEnabled,
     setAutoDeleteWatchedEpisodes,
     setThemePreset,
   } = useApp();
-  const [sheetMode, setSheetMode] = useState<SheetMode>(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const currentLanguage = useMemo(
-    () => SUPPORTED_LANGUAGES.find((item) => item.code === language) ?? SUPPORTED_LANGUAGES[1],
-    [language]
-  );
-  const currentThemePreset = useMemo(
-    () => THEME_PRESET_OPTIONS.find((item) => item.id === themePreset) ?? THEME_PRESET_OPTIONS[0],
-    [themePreset]
-  );
-  const currentThemeLabel = useMemo(
-    () => t(`themes.${currentThemePreset.id}`, { defaultValue: currentThemePreset.label }),
-    [currentThemePreset.id, currentThemePreset.label, t]
-  );
+  const [sheetMode, setSheetMode] = useState<'language' | 'theme' | null>(null);
 
-  const runAsyncSetting = useCallback(async (callback: () => Promise<void>) => {
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      await callback();
-    } catch {
-      setError(t('settings.saving'));
-    } finally {
-      setSaving(false);
-    }
-  }, [t]);
-
-  const handleClearCache = useCallback(async () => {
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      if (FileSystem.cacheDirectory) {
-        const entries = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
-
-        for (const entry of entries) {
-          await FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${entry}`, {
-            idempotent: true,
-          });
-        }
+  const handleClearCache = async () => {
+    if (FileSystem.cacheDirectory) {
+      const entries = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
+      for (const entry of entries) {
+        await FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${entry}`, { idempotent: true });
       }
-
-      setMessage(t('settings.clearCacheDone'));
-    } catch {
-      setError(t('settings.clearCacheError'));
-    } finally {
-      setSaving(false);
     }
-  }, [t]);
-
-  const handleClearBrokenDownloads = useCallback(async () => {
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      await initializeDatabase(db);
-      await clearBrokenVideoEntries(db);
-      setMessage(t('settings.clearBrokenDownloadsDone'));
-    } catch {
-      setError(t('settings.clearBrokenDownloadsError'));
-    } finally {
-      setSaving(false);
-    }
-  }, [db, t]);
-
-  if (!ready) {
-    return (
-      <LiquidBackground>
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={theme.textPrimary} />
-          <Text style={[styles.loadingText, { color: theme.textPrimary }]}>{t('common.loading')}</Text>
-        </View>
-      </LiquidBackground>
-    );
-  }
+  };
 
   return (
     <LiquidBackground>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Animated.View entering={FadeInDown.duration(420)} style={styles.header}>
-          <Image source={require('../../assets/images/icon.png')} style={styles.appIcon} contentFit="cover" />
-          <Text style={[styles.eyebrow, { color: theme.textMuted }]}>{t('settings.eyebrow')}</Text>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>{t('settings.title')}</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{t('settings.subtitle')}</Text>
-        </Animated.View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+           <Text style={[styles.eyebrow, { color: theme.textMuted }]}>Customization</Text>
+           <Text style={[styles.title, { color: theme.textPrimary }]}>{t('settings.title')}</Text>
+        </View>
 
-        {error ? (
-          <GlassCard style={styles.messageCard}>
-            <Text style={[styles.messageText, { color: theme.danger }]}>{error}</Text>
-          </GlassCard>
-        ) : null}
+        <View style={styles.section}>
+           <SettingToggle
+             title={t('settings.autoDelete')}
+             value={autoDeleteWatchedEpisodes}
+             onValueChange={setAutoDeleteWatchedEpisodes}
+           />
+        </View>
 
-        {message ? (
-          <GlassCard style={styles.messageCard}>
-            <Text style={[styles.messageText, { color: theme.success }]}>{message}</Text>
-          </GlassCard>
-        ) : null}
+        <View style={styles.section}>
+           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Appearance & Language</Text>
+           <Pressable onPress={() => setSheetMode('language')}>
+              <GlassCard style={styles.selectionCard}>
+                 <Text style={[styles.selectionText, { color: theme.textPrimary }]}>Language</Text>
+                 <View style={styles.selectionValue}>
+                    <Text style={{ color: theme.accentPrimary }}>{SUPPORTED_LANGUAGES.find(l => l.code === language)?.nativeLabel}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                 </View>
+              </GlassCard>
+           </Pressable>
 
-        <Animated.View layout={LinearTransition.springify()} style={styles.section}>
-          <SettingRow
-            title={t('settings.autoDelete')}
-            description={t('settings.autoDeleteCopy')}>
-            <Switch
-              value={autoDeleteWatchedEpisodes}
-              onValueChange={(value) => {
-                void runAsyncSetting(async () => {
-                  await setAutoDeleteWatchedEpisodes(value);
-                });
-              }}
-              trackColor={{ false: theme.surfaceMuted, true: `${theme.accentPrimary}66` }}
-              thumbColor={autoDeleteWatchedEpisodes ? '#FFFFFF' : '#E5E7EB'}
-            />
-          </SettingRow>
+           <Pressable onPress={() => setSheetMode('theme')}>
+              <GlassCard style={[styles.selectionCard, { marginTop: 12 }]}>
+                 <Text style={[styles.selectionText, { color: theme.textPrimary }]}>Theme</Text>
+                 <View style={styles.selectionValue}>
+                    <Text style={{ color: theme.accentPrimary }}>{THEME_PRESET_OPTIONS.find(t => t.id === themePreset)?.label}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                 </View>
+              </GlassCard>
+           </Pressable>
+        </View>
 
-          <SettingRow title={t('settings.darkMode')} description={t('settings.darkModeCopy')}>
-            <Switch
-              value={darkModeEnabled}
-              onValueChange={(value) => {
-                void runAsyncSetting(async () => {
-                  await setDarkModeEnabled(value);
-                });
-              }}
-              trackColor={{ false: theme.surfaceMuted, true: `${theme.accentSecondary}66` }}
-              thumbColor={darkModeEnabled ? '#FFFFFF' : '#E5E7EB'}
-            />
-          </SettingRow>
-        </Animated.View>
-
-        <Animated.View layout={LinearTransition.springify()} style={styles.section}>
-          <GlassPressable
-            onPress={() => {
-              setSheetMode('language');
-            }}
-            contentStyle={styles.selectionRow}>
-            <View style={styles.rowCopy}>
-              <Text style={[styles.rowTitle, { color: theme.textPrimary }]}>{t('settings.language')}</Text>
-              <Text style={[styles.rowDescription, { color: theme.textSecondary }]}>{t('settings.languageCopy')}</Text>
-            </View>
-            <View style={styles.selectionValue}>
-              <Text style={[styles.selectionLabel, { color: theme.textPrimary }]}>{currentLanguage.nativeLabel}</Text>
-              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-            </View>
-          </GlassPressable>
-
-          <GlassPressable
-            onPress={() => {
-              setSheetMode('theme');
-            }}
-            contentStyle={styles.selectionRow}>
-            <View style={styles.rowCopy}>
-              <Text style={[styles.rowTitle, { color: theme.textPrimary }]}>{t('settings.theme')}</Text>
-              <Text style={[styles.rowDescription, { color: theme.textSecondary }]}>{t('settings.themeCopy')}</Text>
-            </View>
-            <View style={styles.selectionValue}>
-              <Text style={[styles.selectionLabel, { color: theme.textPrimary }]}>{currentThemeLabel}</Text>
-              <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-            </View>
-          </GlassPressable>
-
-          <GlassPressable
-            onPress={() => {
-              void handleClearCache();
-            }}
-            contentStyle={styles.selectionRow}>
-            <View style={styles.rowCopy}>
-              <Text style={[styles.rowTitle, { color: theme.textPrimary }]}>{t('settings.clearCache')}</Text>
-              <Text style={[styles.rowDescription, { color: theme.textSecondary }]}>{t('settings.clearCacheCopy')}</Text>
-            </View>
-            {saving ? (
-              <ActivityIndicator size="small" color={theme.textPrimary} />
-            ) : (
-              <Ionicons name="trash-outline" size={18} color={theme.textPrimary} />
-            )}
-          </GlassPressable>
-
-          <GlassPressable
-            onPress={() => {
-              void handleClearBrokenDownloads();
-            }}
-            contentStyle={styles.selectionRow}>
-            <View style={styles.rowCopy}>
-              <Text style={[styles.rowTitle, { color: theme.textPrimary }]}>{t('settings.clearBrokenDownloads')}</Text>
-              <Text style={[styles.rowDescription, { color: theme.textSecondary }]}>{t('settings.clearBrokenDownloadsCopy')}</Text>
-            </View>
-            {saving ? (
-              <ActivityIndicator size="small" color={theme.textPrimary} />
-            ) : (
-              <Ionicons name="warning-outline" size={18} color={theme.textPrimary} />
-            )}
-          </GlassPressable>
-        </Animated.View>
-
-        <GlassCard style={styles.statusCard}>
-          <Text style={[styles.statusTitle, { color: theme.textPrimary }]}>{t('settings.status')}</Text>
-          <Text style={[styles.statusCopy, { color: theme.textSecondary }]}>
-            {currentLanguage.nativeLabel} • {currentThemeLabel} •{' '}
-            {darkModeEnabled ? t('settings.modeDark') : t('settings.modeSoft')}
-          </Text>
-          {saving ? (
-            <View style={styles.savingRow}>
-              <ActivityIndicator size="small" color={theme.textPrimary} />
-              <Text style={[styles.savingLabel, { color: theme.textPrimary }]}>{t('settings.saving')}</Text>
-            </View>
-          ) : null}
-        </GlassCard>
+        <View style={styles.section}>
+           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Maintenance</Text>
+           <Pressable onPress={handleClearCache}>
+              <GlassCard style={styles.selectionCard}>
+                 <Text style={[styles.selectionText, { color: theme.textPrimary }]}>{t('settings.clearCache')}</Text>
+                 <Ionicons name="trash-outline" size={18} color={theme.danger} />
+              </GlassCard>
+           </Pressable>
+        </View>
       </ScrollView>
 
-      <Modal
-        animationType="fade"
-        transparent
-        visible={sheetMode !== null}
-        onRequestClose={() => {
-          setSheetMode(null);
-        }}>
-        <View style={styles.sheetBackdrop}>
-          <Animated.View entering={FadeInDown.springify()} style={styles.sheetWrap}>
+      <Modal animationType="slide" transparent visible={sheetMode !== null} onRequestClose={() => setSheetMode(null)}>
+         <View style={styles.modalBackdrop}>
             <GlassCard style={styles.sheetCard}>
-              <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>
-                {sheetMode === 'language' ? t('settings.languageSheetTitle') : t('settings.themeSheetTitle')}
-              </Text>
-
-              {sheetMode === 'language'
-                ? SUPPORTED_LANGUAGES.map((item) => {
-                    const active = item.code === language;
-
-                    return (
-                      <Pressable
-                        key={item.code}
-                        onPress={() => {
-                          void runAsyncSetting(async () => {
-                            await setLanguage(item.code);
-                            setSheetMode(null);
-                          });
-                        }}
-                        style={[
-                          styles.sheetOption,
-                          {
-                            backgroundColor: active ? theme.surfaceStrong : theme.surfaceMuted,
-                            borderColor: active ? theme.accentPrimary : theme.separator,
-                          },
-                        ]}>
-                        <View>
-                          <Text style={[styles.sheetOptionTitle, { color: theme.textPrimary }]}>{item.nativeLabel}</Text>
-                          <Text style={[styles.sheetOptionMeta, { color: theme.textSecondary }]}>{item.label}</Text>
-                        </View>
-                        {active ? <Ionicons name="checkmark-circle" size={20} color={theme.accentPrimary} /> : null}
-                      </Pressable>
-                    );
-                  })
-                : THEME_PRESET_OPTIONS.map((item) => {
-                    const active = item.id === themePreset;
-
-                    return (
-                      <Pressable
-                        key={item.id}
-                        onPress={() => {
-                          void runAsyncSetting(async () => {
-                            await setThemePreset(item.id);
-                            setSheetMode(null);
-                          });
-                        }}
-                        style={[
-                          styles.sheetOption,
-                          {
-                            backgroundColor: active ? theme.surfaceStrong : theme.surfaceMuted,
-                            borderColor: active ? theme.accentPrimary : theme.separator,
-                          },
-                        ]}>
-                        <Text style={[styles.sheetOptionTitle, { color: theme.textPrimary }]}>
-                          {t(`themes.${item.id}`, { defaultValue: item.label })}
-                        </Text>
-                        {active ? <Ionicons name="checkmark-circle" size={20} color={theme.accentPrimary} /> : null}
-                      </Pressable>
-                    );
-                  })}
-
-              <Pressable
-                onPress={() => {
-                  setSheetMode(null);
-                }}
-                style={[styles.sheetCloseButton, { backgroundColor: theme.surfaceStrong }]}>
-                <Text style={[styles.sheetCloseLabel, { color: theme.textPrimary }]}>{t('common.close')}</Text>
-              </Pressable>
+               <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>{sheetMode === 'language' ? 'Select Language' : 'Select Theme'}</Text>
+               <ScrollView style={{ maxHeight: 400 }}>
+                  {sheetMode === 'language' ? SUPPORTED_LANGUAGES.map(l => (
+                    <Pressable key={l.code} onPress={() => { setLanguage(l.code); setSheetMode(null); }} style={styles.option}>
+                       <Text style={{ color: language === l.code ? theme.accentPrimary : theme.textPrimary, fontSize: 16 }}>{l.nativeLabel}</Text>
+                       {language === l.code && <Ionicons name="checkmark" size={20} color={theme.accentPrimary} />}
+                    </Pressable>
+                  )) : THEME_PRESET_OPTIONS.map(tp => (
+                    <Pressable key={tp.id} onPress={() => { setThemePreset(tp.id); setSheetMode(null); }} style={styles.option}>
+                       <Text style={{ color: themePreset === tp.id ? theme.accentPrimary : theme.textPrimary, fontSize: 16 }}>{tp.label}</Text>
+                       {themePreset === tp.id && <Ionicons name="checkmark" size={20} color={theme.accentPrimary} />}
+                    </Pressable>
+                  ))}
+               </ScrollView>
+               <Pressable onPress={() => setSheetMode(null)} style={styles.closeBtn}>
+                  <Text style={{ color: theme.textSecondary }}>Close</Text>
+               </Pressable>
             </GlassCard>
-          </Animated.View>
-        </View>
+         </View>
       </Modal>
     </LiquidBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 120,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  appIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    marginBottom: 14,
-  },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-  },
-  title: {
-    marginTop: 8,
-    fontSize: 34,
-    fontWeight: '800',
-    lineHeight: 38,
-  },
-  subtitle: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 20,
-    maxWidth: 300,
-  },
-  messageCard: {
-    marginBottom: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  messageText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  section: {
-    gap: 12,
-    marginBottom: 16,
-  },
-  rowCard: {
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  rowCopy: {
-    flex: 1,
-    gap: 6,
-  },
-  rowTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  rowDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  selectionRow: {
-    minHeight: 84,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  selectionValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  selectionLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  statusCard: {
-    padding: 18,
-    gap: 8,
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  statusCopy: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  savingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  savingLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(4, 7, 18, 0.56)',
-  },
-  sheetWrap: {
-    padding: 20,
-    paddingBottom: 32,
-  },
-  sheetCard: {
-    padding: 18,
-    gap: 12,
-  },
-  sheetTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  sheetOption: {
-    minHeight: 58,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  sheetOptionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  sheetOptionMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  sheetCloseButton: {
-    marginTop: 8,
-    minHeight: 46,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetCloseLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
+  content: { padding: 20, paddingBottom: 100 },
+  header: { marginBottom: 32, marginTop: 20 },
+  eyebrow: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  title: { fontSize: 32, fontWeight: '900', marginTop: 4 },
+  section: { marginBottom: 32 },
+  sectionTitle: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', marginBottom: 12, opacity: 0.6 },
+  settingCard: { padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  settingText: { fontSize: 16, fontWeight: '700' },
+  selectionCard: { padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectionText: { fontSize: 16, fontWeight: '700' },
+  selectionValue: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheetCard: { padding: 24, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+  modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 20 },
+  option: { paddingVertical: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  closeBtn: { marginTop: 20, alignItems: 'center', padding: 12 },
 });

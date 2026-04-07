@@ -8,37 +8,20 @@ import {
   FlatList,
   ListRenderItemInfo,
   Pressable,
-  StyleProp,
   StyleSheet,
   Text,
   TextInput,
   View,
-  ViewStyle,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { LiquidBackground } from '@/src/components/ui/liquid-background';
+import { GlassCard } from '@/src/components/ui/glass-card';
 import { useApp } from '@/src/providers/app-provider';
+import { useAuth } from '@/src/providers/auth-provider';
 import { fetchTrendingCatalog, searchCatalog, type CatalogAnime } from '@/src/services/online-catalog';
-
-const GLASS_INTENSITY = 70;
-const LIQUID_GLASS_BG = 'rgba(11, 16, 30, 0.42)';
-const LIQUID_GLASS_BORDER = 'rgba(255, 255, 255, 0.2)';
-
-function GlassPanel({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style?: StyleProp<ViewStyle>;
-}) {
-  return (
-    <BlurView intensity={GLASS_INTENSITY} tint="dark" style={[styles.glassPanel, style]}>
-      {children}
-    </BlurView>
-  );
-}
 
 function CatalogCard({
   item,
@@ -58,7 +41,7 @@ function CatalogCard({
       layout={LinearTransition.springify().damping(18).stiffness(180)}
       style={styles.cardShell}>
       <Pressable onPress={onPress}>
-        <GlassPanel style={styles.card}>
+        <GlassCard style={styles.card}>
           <View style={styles.posterShell}>
             {item.posterUrl ? (
               <Image source={{ uri: item.posterUrl }} style={styles.poster} contentFit="cover" />
@@ -68,21 +51,26 @@ function CatalogCard({
               </View>
             )}
 
-            <View style={[styles.scoreBadge, { backgroundColor: theme.surfaceStrong }]}>
-              <Ionicons name="star" size={12} color={theme.accentPrimary} />
-              <Text style={[styles.scoreBadgeLabel, { color: theme.textPrimary }]}>{item.score}</Text>
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.85)']}
+              style={styles.posterGradient}
+            />
+
+            <View style={[styles.scoreBadge, { backgroundColor: theme.accentPrimary }]}>
+              <Ionicons name="star" size={10} color="#000" />
+              <Text style={styles.scoreBadgeLabel}>{item.score}</Text>
+            </View>
+
+            <View style={styles.cardContentOverlay}>
+               <Text style={[styles.cardTitle, { color: '#FFF' }]} numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text style={[styles.cardMeta, { color: 'rgba(255,255,255,0.7)' }]} numberOfLines={1}>
+                {t('discover.episodesCount', { count: item.episodesAired || item.episodes || 0 })}
+              </Text>
             </View>
           </View>
-
-          <View style={styles.cardBody}>
-            <Text style={[styles.cardTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-            <Text style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-              {t('discover.episodesCount', { count: item.episodesAired || item.episodes || 0 })}
-            </Text>
-          </View>
-        </GlassPanel>
+        </GlassCard>
       </Pressable>
     </Animated.View>
   );
@@ -90,6 +78,7 @@ function CatalogCard({
 
 export default function DiscoverTabScreen() {
   const { theme } = useApp();
+  const { user } = useAuth();
   const { t } = useTranslation();
   const [items, setItems] = useState<CatalogAnime[]>([]);
   const [query, setQuery] = useState('');
@@ -111,10 +100,12 @@ export default function DiscoverTabScreen() {
       setError(null);
       setRefreshing(true);
 
+      const includeHentai = Boolean(user && !user.isGuest && (user as any).age >= 18);
+
       try {
         const nextItems = trimmedQuery
-          ? await searchCatalog(trimmedQuery)
-          : await fetchTrendingCatalog();
+          ? await searchCatalog(trimmedQuery, includeHentai)
+          : await fetchTrendingCatalog(includeHentai);
         setItems(nextItems);
         setActiveQuery(trimmedQuery);
       } catch {
@@ -125,7 +116,7 @@ export default function DiscoverTabScreen() {
         setRefreshing(false);
       }
     },
-    [activeQuery, t]
+    [activeQuery, t, user]
   );
 
   useEffect(() => {
@@ -147,7 +138,8 @@ export default function DiscoverTabScreen() {
         setSuggestionsLoading(true);
 
         try {
-          const results = await searchCatalog(trimmed);
+          const includeHentai = Boolean(user && !user.isGuest && (user as any).age >= 18);
+          const results = await searchCatalog(trimmed, includeHentai);
           if (active) {
             setSuggestions(results.slice(0, 6));
           }
@@ -167,7 +159,7 @@ export default function DiscoverTabScreen() {
       active = false;
       clearTimeout(timeoutId);
     };
-  }, [query]);
+  }, [query, user]);
 
   const renderItem = ({ item, index }: ListRenderItemInfo<CatalogAnime>) => (
     <CatalogCard
@@ -188,7 +180,7 @@ export default function DiscoverTabScreen() {
     return (
       <LiquidBackground>
         <View style={styles.loadingState}>
-          <ActivityIndicator size="large" color={theme.textPrimary} />
+          <ActivityIndicator size="large" color={theme.accentPrimary} />
           <Text style={[styles.loadingText, { color: theme.textPrimary }]}>{t('online.loading')}</Text>
         </View>
       </LiquidBackground>
@@ -197,172 +189,163 @@ export default function DiscoverTabScreen() {
 
   return (
     <LiquidBackground>
-      <FlatList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={(item) => String(item.id)}
-        style={styles.list}
-        numColumns={2}
-        columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        removeClippedSubviews={false}
-        ListHeaderComponentStyle={styles.headerShell}
-        onRefresh={() => {
-          void loadCatalog();
-        }}
-        refreshing={refreshing}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <GlassPanel style={styles.heroCard}>
-              <Image
-                source={require('../../assets/images/icon.png')}
-                style={styles.heroIcon}
-                contentFit="cover"
-              />
-              <View style={styles.heroCopy}>
-                <Text style={[styles.eyebrow, { color: theme.textSecondary }]}>{t('discover.heroEyebrow')}</Text>
-                <Text style={[styles.title, { color: theme.textPrimary }]}>{t('tabs.discover')}</Text>
-                <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-                  {t('discover.heroSubtitle')}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  void loadCatalog();
-                }}
-                style={[styles.heroAction, { backgroundColor: theme.surfaceStrong }]}>
-                {refreshing ? (
-                  <ActivityIndicator size="small" color={theme.textPrimary} />
-                ) : (
-                  <Ionicons name="refresh" size={18} color={theme.textPrimary} />
-                )}
-              </Pressable>
-            </GlassPanel>
-
-            <View style={styles.searchWrap}>
-              <GlassPanel style={styles.searchCard}>
-                <Ionicons name="search-outline" size={18} color={theme.textSecondary} />
-                <TextInput
-                  value={query}
-                  onChangeText={setQuery}
-                  onSubmitEditing={() => {
-                    setSuggestions([]);
-                    void loadCatalog(query);
-                  }}
-                  placeholder={t('discover.searchPlaceholder')}
-                  placeholderTextColor={theme.textMuted}
-                  returnKeyType="search"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.searchInput, { color: theme.textPrimary }]}
+      <View style={styles.screen}>
+        <FlatList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={(item) => String(item.id)}
+          style={styles.list}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onRefresh={() => {
+            void loadCatalog();
+          }}
+          refreshing={refreshing}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <GlassCard style={styles.heroCard}>
+                <Image
+                  source={require('../../assets/images/icon.png')}
+                  style={styles.heroIcon}
+                  contentFit="cover"
                 />
-                {query ? (
-                  <Pressable
-                    onPress={() => {
-                      setQuery('');
+                <View style={styles.heroCopy}>
+                  <Text style={[styles.eyebrow, { color: theme.textSecondary }]}>{t('discover.heroEyebrow')}</Text>
+                  <Text style={[styles.title, { color: theme.textPrimary }]}>{t('tabs.discover')}</Text>
+                  <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+                    {t('discover.heroSubtitle')}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    void loadCatalog();
+                  }}
+                  style={[styles.heroAction, { backgroundColor: theme.surfaceStrong }]}>
+                  {refreshing ? (
+                    <ActivityIndicator size="small" color={theme.textPrimary} />
+                  ) : (
+                    <Ionicons name="refresh" size={18} color={theme.textPrimary} />
+                  )}
+                </Pressable>
+              </GlassCard>
+
+              <View style={styles.searchContainer}>
+                <GlassCard style={styles.searchCard}>
+                  <Ionicons name="search-outline" size={18} color={theme.textSecondary} />
+                  <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    onSubmitEditing={() => {
                       setSuggestions([]);
-                      void loadCatalog('');
-                    }}
-                    style={[styles.searchAction, { backgroundColor: theme.surfaceStrong }]}>
-                    <Ionicons name="close" size={16} color={theme.textPrimary} />
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={() => {
                       void loadCatalog(query);
                     }}
-                    style={[styles.searchAction, { backgroundColor: theme.surfaceStrong }]}>
-                    <Ionicons name="arrow-forward" size={16} color={theme.textPrimary} />
-                  </Pressable>
-                )}
-              </GlassPanel>
+                    placeholder={t('discover.searchPlaceholder')}
+                    placeholderTextColor={theme.textMuted}
+                    returnKeyType="search"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[styles.searchInput, { color: theme.textPrimary }]}
+                  />
+                  {query ? (
+                    <Pressable
+                      onPress={() => {
+                        setQuery('');
+                        setSuggestions([]);
+                        void loadCatalog('');
+                      }}
+                      style={[styles.searchAction, { backgroundColor: theme.surfaceStrong }]}>
+                      <Ionicons name="close" size={16} color={theme.textPrimary} />
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      onPress={() => {
+                        void loadCatalog(query);
+                      }}
+                      style={[styles.searchAction, { backgroundColor: theme.surfaceStrong }]}>
+                      <Ionicons name="arrow-forward" size={16} color={theme.textPrimary} />
+                    </Pressable>
+                  )}
+                </GlassCard>
 
-              {showSuggestions ? (
-                <GlassPanel style={styles.searchDropdown}>
-                  <FlatList
-                    data={suggestions}
-                    keyExtractor={(item) => `suggestion-${item.id}`}
-                    keyboardShouldPersistTaps="handled"
-                    scrollEnabled={false}
-                    ListEmptyComponent={
-                      <View style={styles.suggestionEmpty}>
-                        <Text style={[styles.suggestionEmptyText, { color: theme.textSecondary }]}>
-                          {t('discover.suggestionsEmpty')}
-                        </Text>
-                      </View>
-                    }
-                    renderItem={({ item }) => (
-                      <Pressable
-                        onPress={() => {
-                          setQuery(item.title);
-                          setSuggestions([]);
-                          router.push({
-                            pathname: '/online/[id]',
-                            params: { id: String(item.id) },
-                          });
-                        }}
-                        style={styles.suggestionRow}>
-                        {item.posterUrl ? (
-                          <Image source={{ uri: item.posterUrl }} style={styles.suggestionThumb} contentFit="cover" />
-                        ) : (
-                          <View style={[styles.suggestionThumb, { backgroundColor: theme.surfaceStrong }]} />
-                        )}
-                        <View style={styles.suggestionCopy}>
-                          <Text style={[styles.suggestionTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                          <Text style={[styles.suggestionMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                            {t('discover.episodesCount', { count: item.episodesAired || item.episodes || 0 })}
+                {showSuggestions ? (
+                  <GlassCard style={styles.searchDropdown}>
+                    <FlatList
+                      data={suggestions}
+                      keyExtractor={(item) => `suggestion-${item.id}`}
+                      keyboardShouldPersistTaps="handled"
+                      scrollEnabled={false}
+                      ListEmptyComponent={
+                        <View style={styles.suggestionEmpty}>
+                          <Text style={[styles.suggestionEmptyText, { color: theme.textSecondary }]}>
+                            {t('discover.suggestionsEmpty')}
                           </Text>
                         </View>
-                      </Pressable>
-                    )}
-                  />
-                </GlassPanel>
+                      }
+                      renderItem={({ item }) => (
+                        <Pressable
+                          onPress={() => {
+                            setQuery(item.title);
+                            setSuggestions([]);
+                            router.push({
+                              pathname: '/online/[id]',
+                              params: { id: String(item.id) },
+                            });
+                          }}
+                          style={styles.suggestionRow}>
+                          {item.posterUrl ? (
+                            <Image source={{ uri: item.posterUrl }} style={styles.suggestionThumb} contentFit="cover" />
+                          ) : (
+                            <View style={[styles.suggestionThumb, { backgroundColor: theme.surfaceStrong }]} />
+                          )}
+                          <View style={styles.suggestionCopy}>
+                            <Text style={[styles.suggestionTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                              {item.title}
+                            </Text>
+                            <Text style={[styles.suggestionMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                              {t('discover.episodesCount', { count: item.episodesAired || item.episodes || 0 })}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      )}
+                    />
+                  </GlassCard>
+                ) : null}
+              </View>
+
+              {error ? (
+                <GlassCard style={styles.noticeCard}>
+                  <Ionicons name="warning-outline" size={18} color={theme.warning} />
+                  <Text style={[styles.noticeText, { color: theme.textSecondary }]}>{error}</Text>
+                </GlassCard>
               ) : null}
             </View>
-
-            {error ? (
-              <GlassPanel style={styles.noticeCard}>
-                <Ionicons name="warning-outline" size={18} color={theme.warning} />
-                <Text style={[styles.noticeText, { color: theme.textSecondary }]}>{error}</Text>
-              </GlassPanel>
-            ) : null}
-          </View>
-        }
-        ListEmptyComponent={
-          <GlassPanel style={styles.emptyCard}>
-            <Ionicons name="film-outline" size={28} color={theme.textPrimary} />
-            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t('discover.emptyTitle')}</Text>
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              {t('discover.emptyCopy')}
-            </Text>
-          </GlassPanel>
-        }
-      />
+          }
+          ListEmptyComponent={
+            <GlassCard style={styles.emptyCard}>
+              <Ionicons name="film-outline" size={28} color={theme.textPrimary} />
+              <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t('discover.emptyTitle')}</Text>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                {t('discover.emptyCopy')}
+              </Text>
+            </GlassCard>
+          }
+        />
+      </View>
     </LiquidBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 120,
-    overflow: 'visible',
+  screen: {
+    flex: 1,
   },
-  glassPanel: {
-    borderWidth: 1,
-    borderColor: LIQUID_GLASS_BORDER,
-    borderRadius: 16,
-    backgroundColor: LIQUID_GLASS_BG,
-    overflow: 'hidden',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+  content: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 120,
   },
   loadingState: {
     flex: 1,
@@ -377,80 +360,71 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 20,
     gap: 14,
-    zIndex: 9999,
-    elevation: 10,
-    overflow: 'visible',
-  },
-  headerShell: {
-    zIndex: 9999,
-    elevation: 10,
-    overflow: 'visible',
+    zIndex: 10,
   },
   heroCard: {
-    padding: 18,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
   },
   heroIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 14,
   },
   heroCopy: {
     flex: 1,
-    gap: 6,
+    gap: 4,
   },
   eyebrow: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1.1,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
   },
   subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
   heroAction: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  searchWrap: {
+  searchContainer: {
     position: 'relative',
     zIndex: 9999,
-    elevation: 10,
-    overflow: 'visible',
+    elevation: 100,
   },
   searchCard: {
-    minHeight: 58,
+    minHeight: 54,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   list: {
-    zIndex: -1,
-    elevation: 0,
-    overflow: 'visible',
+    flex: 1,
   },
   searchDropdown: {
     position: 'absolute',
-    top: 64,
-    zIndex: 9999,
-    elevation: 10,
-    width: '100%',
+    top: 60,
+    left: 0,
+    right: 0,
+    zIndex: 10000,
+    elevation: 101,
   },
   suggestionRow: {
-    minHeight: 60,
+    minHeight: 56,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -458,9 +432,9 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   suggestionThumb: {
-    width: 38,
-    height: 52,
-    borderRadius: 10,
+    width: 36,
+    height: 50,
+    borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
   suggestionCopy: {
@@ -472,12 +446,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   suggestionMeta: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
     fontWeight: '600',
   },
   suggestionEmpty: {
-    minHeight: 56,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
@@ -487,18 +461,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   noticeCard: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
   },
   noticeText: {
     flex: 1,
@@ -512,28 +479,38 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   searchAction: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   gridRow: {
     gap: 14,
     marginBottom: 14,
-    zIndex: -1,
   },
   cardShell: {
     flex: 1,
-    zIndex: -1,
   },
-  card: {},
+  card: {
+    borderRadius: 14,
+  },
   posterShell: {
     position: 'relative',
+    width: '100%',
+    aspectRatio: 0.7,
+    overflow: 'hidden',
   },
   poster: {
     width: '100%',
-    aspectRatio: 0.72,
+    height: '100%',
+  },
+  posterGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
   },
   posterFallback: {
     alignItems: 'center',
@@ -541,32 +518,36 @@ const styles = StyleSheet.create({
   },
   scoreBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    top: 8,
+    right: 8,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 3,
   },
   scoreBadgeLabel: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000',
   },
-  cardBody: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 6,
+  cardContentOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 10,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   cardMeta: {
-    fontSize: 12,
-    fontWeight: '600',
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '700',
   },
   emptyCard: {
     marginTop: 40,

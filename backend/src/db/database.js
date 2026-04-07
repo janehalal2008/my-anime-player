@@ -73,6 +73,7 @@ async function initializeDatabase() {
       rank TEXT NOT NULL DEFAULT 'Novice',
       is_guest INTEGER NOT NULL DEFAULT 0,
       avatar_seed TEXT,
+      age INTEGER,
       last_seen_at DATETIME,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )

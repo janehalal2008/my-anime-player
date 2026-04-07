@@ -301,15 +301,17 @@ export default function FolderScreen() {
       return;
     }
 
+    const videoId = selectedVideo.id;
     setSubmittingAction(true);
     setError(null);
 
     try {
-      await deleteVideoById(db, selectedVideo.id);
+      setVideos(prev => prev.filter(v => v.id !== videoId));
+      await deleteVideoById(db, videoId);
       closeMenus();
-      await loadPlaylistData();
     } catch {
       setError(t('playlist.deleteVideo'));
+      await loadPlaylistData();
     } finally {
       setSubmittingAction(false);
     }

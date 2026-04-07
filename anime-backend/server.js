@@ -430,6 +430,41 @@ async function handleYouTubeExtract(req, res) {
 app.post('/api/youtube/extract', handleYouTubeExtract);
 app.post('/api/media/youtube/extract', handleYouTubeExtract);
 
+async function handleDownloadExtract(req, res) {
+  const kodikLink = String(req.body?.kodik_link || '').trim();
+  if (!kodikLink) {
+    return res.status(400).json({ ok: false, error: 'kodik_link is required' });
+  }
+
+  try {
+    // In a real scenario, this would use puppeteer or a specialized extractor.
+    // For now, we attempt to find the direct stream from the kodik page.
+    const response = await axios.get(kodikLink, {
+       headers: { 'User-Agent': USER_AGENT }
+    });
+
+    // Simple regex attempt to find .m3u8 or .mp4 links in the page source
+    const m3u8Match = response.data.match(/https?:\/\/[^"']+\.m3u8[^"']*/i);
+    const mp4Match = response.data.match(/https?:\/\/[^"']+\.mp4[^"']*/i);
+
+    const directUrl = (m3u8Match && m3u8Match[0]) || (mp4Match && mp4Match[0]);
+
+    if (!directUrl) {
+       // Fallback: return the link itself if it might be a direct stream already
+       // or if we can't extract (frontend will try to use it)
+       return res.json({ ok: true, direct_url: kodikLink });
+    }
+
+    return res.json({ ok: true, direct_url: directUrl });
+  } catch (error) {
+    console.error('Download extract error:', error);
+    return res.status(502).json({ ok: false, error: 'Extraction failed' });
+  }
+}
+
+app.post('/api/download/extract', handleDownloadExtract);
+app.post('/api/media/download/extract', handleDownloadExtract);
+
 io.on('connection', (socket) => {
   socket.on('join_room', (roomId) => {
     const room = String(roomId || '').trim();

@@ -104,6 +104,7 @@ export default function RoomScreen() {
   const initialMediaHeaders = parseHeaders(params.mediaHeaders);
   const socketRef = useRef<RealtimeSocket | null>(null);
   const initialMediaAppliedRef = useRef(false);
+  const skipNextSyncRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [joining, setJoining] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +267,7 @@ export default function RoomScreen() {
         sentAt?: string;
         user?: { username?: string };
       }) => {
+        skipNextSyncRef.current = true;
         setSyncCommand({
           id: `sync-${payload.sentAt || Date.now()}`,
           action: payload.action,
@@ -293,7 +295,8 @@ export default function RoomScreen() {
 
   async function handlePlaybackEvent(event: PlaybackSyncCommand) {
     const socket = socketRef.current;
-    if (!socket || !roomId) {
+    if (!socket || !roomId || skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
       return;
     }
 
