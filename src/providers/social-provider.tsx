@@ -93,7 +93,7 @@ type SocialContextValue = {
   addFriend: (query: string) => Promise<SocialFriendRequest | null>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   declineFriendRequest: (requestId: string) => Promise<void>;
-  inviteToRoom: (friendId: string) => Promise<SocialRoomInvite | null>;
+  inviteToRoom: (friendId: string, roomId?: string) => Promise<SocialRoomInvite | null>;
   clearInvite: (friendId: string) => Promise<void>;
   acceptRoomInvite: (inviteId: string) => Promise<{ roomId: string }>;
   declineRoomInvite: (inviteId: string) => Promise<void>;
@@ -399,7 +399,7 @@ export function SocialProvider({ children }: { children: ReactNode }) {
   );
 
   const inviteToRoom = useCallback(
-    async (friendId: string) => {
+    async (friendId: string, roomId?: string) => {
       if (!token) {
         throw new Error(i18n.t('social.errors.signInRequired', { defaultValue: 'Sign in first.' }));
       }
@@ -409,6 +409,7 @@ export function SocialProvider({ children }: { children: ReactNode }) {
         {
           method: 'POST',
           token,
+          body: { roomId },
         }
       );
 

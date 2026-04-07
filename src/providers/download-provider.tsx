@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 
+import { apiRequest } from '@/src/services/backend-api';
 import {
   DEFAULT_PLAYLIST_ICON,
   getVideoById,
@@ -89,6 +90,22 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const safeFilename = sanitizeSegment(request.filename);
     const targetUri = `${DOWNLOAD_DIRECTORY}${Date.now()}-${safeFilename}`;
 
+    // Extract real URL if needed
+    let finalUrl = request.remoteUrl;
+    if (finalUrl.includes('kodik')) {
+      try {
+        const extractRes = await apiRequest<{ ok: boolean; direct_url: string }>('/api/media/download/extract', {
+           method: 'POST',
+           body: { kodik_link: finalUrl }
+        });
+        if (extractRes.ok && extractRes.direct_url) {
+           finalUrl = extractRes.direct_url;
+        }
+      } catch (e) {
+        console.warn('Failed to extract direct URL, using original link', e);
+      }
+    }
+
     await updateVideoDownloadState(db, video.id, {
       downloadStatus: 'queued',
       downloadProgress: 0,
@@ -105,7 +122,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     }));
 
     const resumable = FileSystem.createDownloadResumable(
-      request.remoteUrl,
+      finalUrl,
       targetUri,
       {
         headers: request.headers,

@@ -42,6 +42,7 @@ export type AuthUser = {
   isGuest: boolean;
   joinedAt: string;
   avatarSeed: string;
+  age?: number;
   stats?: {
     friends: number;
     messages: number;
@@ -55,7 +56,7 @@ type AuthContextValue = {
   token: string | null;
   user: AuthUser | null;
   pendingAuth: PendingAuth;
-  startRegister: (input: { username: string; email: string; password: string }) => Promise<void>;
+  startRegister: (input: { username: string; email: string; password: string; age: number }) => Promise<void>;
   startLogin: (input: { email: string; password: string }) => Promise<void>;
   continueAsGuest: () => Promise<void>;
   submitTwoFactorCode: (code: string) => Promise<void>;
@@ -81,6 +82,7 @@ function mapApiUser(user: AuthApiUser): AuthUser {
     isGuest: Boolean(user.is_guest),
     joinedAt: user.created_at || new Date().toISOString(),
     avatarSeed: user.avatar_seed || `${user.username}-${user.id ?? 'guest'}`,
+    age: (user as any).age,
     stats: user.stats
       ? {
           friends: Number(user.stats.friends || 0),
@@ -178,10 +180,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshSession]);
 
   const startRegister = useCallback(
-    async (input: { username: string; email: string; password: string }) => {
+    async (input: { username: string; email: string; password: string; age: number }) => {
       const username = input.username.trim();
       const email = normalizeEmail(input.email);
       const password = input.password;
+      const age = input.age;
 
       if (username.length < 2) {
         throw new Error(i18n.t('auth.errors.usernameMin'));
@@ -197,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const response = await apiRequest<{ token: string; user: AuthApiUser }>('/api/auth/register', {
         method: 'POST',
-        body: { username, email, password },
+        body: { username, email, password, age },
       });
 
       await persistSession(response.token, mapApiUser(response.user));

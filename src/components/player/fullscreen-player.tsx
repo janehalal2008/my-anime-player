@@ -536,7 +536,7 @@ function FullscreenPlayerContent({
 
             <Pressable style={styles.hostButton}>
               <MaterialIcons name="groups" size={20} color={theme.textPrimary} />
-              <Text style={[styles.hostButtonLabel, { color: theme.textPrimary }]}>{t('player.hostRoom')}</Text>
+              <Text style={[styles.hostButtonLabel, { color: theme.textPrimary }]}>{t('player.cowatch', { defaultValue: 'Co-watch' })}</Text>
             </Pressable>
           </View>
 
